@@ -20,14 +20,14 @@ export default function Home() {
           <div className="hero-copy">
             <span className="eyebrow">
               <Route size={15} aria-hidden="true" />
-              Dynamic Flow · Arc settlement · ENS identity
+              Dynamic Flow · Global settlement · ENS identity
             </span>
             <div className="stack">
-              <h1>Accept any crypto. Settle in USDC on Arc.</h1>
+              <h1>Accept any crypto. Settle in USDC anywhere.</h1>
               <p className="lede">
                 AnyAsset Checkout gives merchants ENS-branded payment links while Dynamic Flow
-                routes the customer&apos;s existing wallet, chain, and token into predictable Arc
-                Testnet USDC settlement.
+                routes the customer&apos;s existing wallet, chain, and token into predictable global
+                USDC settlement.
               </p>
             </div>
             <div className="button-row">
@@ -54,7 +54,7 @@ export default function Home() {
               </span>
               <span className="status-chip">
                 <CheckCircle2 size={15} aria-hidden="true" />
-                <strong>USDC on Arc</strong>
+                <strong>Global USDC</strong>
               </span>
             </div>
             <div className="preview-grid">
@@ -99,7 +99,7 @@ export default function Home() {
                     <BadgeDollarSign size={22} aria-hidden="true" />
                   </div>
                   <div>
-                    <strong>USDC settlement on Arc</strong>
+                    <strong>Merchant-selected settlement</strong>
                     <div className="rail-track" aria-hidden="true" />
                   </div>
                 </div>
@@ -127,10 +127,10 @@ export default function Home() {
               </div>
               <div className="feature-card">
                 <BadgeDollarSign size={24} aria-hidden="true" />
-                <h3>Arc settlement rail</h3>
+                <h3>Global settlement rails</h3>
                 <p className="muted">
-                  Merchants configure USDC on Arc Testnet and the dashboard reads live Arc USDC
-                  balances from the settlement address.
+                  Merchants choose where USDC lands, from live Flow-friendly networks to optional
+                  testnet rails for demos.
                 </p>
               </div>
               <div className="feature-card">

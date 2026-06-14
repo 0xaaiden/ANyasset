@@ -1,15 +1,15 @@
 # AnyAsset Checkout
 
-AnyAsset Checkout is a crypto checkout-link app for merchants. A merchant creates an ENS-branded invoice, a customer pays from a supported source wallet/chain/token, and the merchant receives configured settlement in USDC on Arc Testnet.
+AnyAsset Checkout is a crypto checkout-link app for merchants. A merchant creates an ENS-branded invoice, a customer pays from a supported source wallet/chain/token, and the merchant receives configured USDC settlement on the network they choose.
 
 ## Demo Flow
 
 1. Open `/merchant` and create or use the seeded `coffee.aiden.eth` merchant.
-2. Confirm settlement is `USDC on Arc Testnet`.
+2. Choose a settlement destination, such as Base USDC for live Flow testing or Arc Testnet USDC as an experimental target.
 3. Create a fixed-price checkout link.
 4. Open `/checkout/<invoiceId>`.
 5. With Dynamic credentials configured, pay through Dynamic Flow. Without credentials, use demo mode to exercise the same state machine.
-6. Return to the merchant dashboard to see invoice status, settlement receipt, and Arc balance.
+6. Return to the merchant dashboard to see invoice status, settlement receipt, and the selected settlement rail.
 
 ## Sponsor Integrations
 
@@ -20,12 +20,12 @@ AnyAsset Checkout is a crypto checkout-link app for merchants. A merchant create
 - Models the Flow lifecycle: create transaction, attach source, quote, submit, and poll/settle.
 - Keeps invoice memo IDs for reconciliation and webhook updates.
 
-### Arc
+### Settlement rails
 
-- Merchant settlement token is USDC on Arc Testnet.
-- Uses Arc Testnet chain ID `5042002`.
-- Uses Arc Testnet USDC token address `0x3600000000000000000000000000000000000000`.
-- Reads Arc USDC balances with viem and links settlement receipts to Arcscan.
+- Merchants can select the USDC settlement network during setup.
+- Base USDC is the recommended live Dynamic Flow route.
+- Arc Testnet USDC remains available as an experimental target for Arc settlement demos.
+- Arc Testnet uses chain ID `5042002` and USDC token address `0x3600000000000000000000000000000000000000`.
 
 ### ENS
 

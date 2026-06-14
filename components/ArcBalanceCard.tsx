@@ -44,15 +44,15 @@ export function ArcBalanceCard({ address }: { address: string }) {
     <div className="form-card">
       <div className="invoice-title">
         <div>
-          <p className="muted">Arc settlement balance</p>
+          <p className="muted">Experimental Arc target balance</p>
           <h3>
             {balance.status === "ready"
               ? `${Number(balance.value).toLocaleString(undefined, {
                   maximumFractionDigits: 6
                 })} USDC`
               : balance.status === "loading"
-                ? "Reading Arc..."
-                : "USDC on Arc"}
+                ? "Reading rail..."
+                : "Arc Testnet USDC"}
           </h3>
         </div>
         <WalletCards size={22} aria-hidden="true" />

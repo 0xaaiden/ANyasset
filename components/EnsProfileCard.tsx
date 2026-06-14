@@ -5,11 +5,13 @@ import { shortAddress } from "@/lib/format";
 export function EnsProfileCard({
   profile,
   fallbackName,
-  settlementAddress
+  settlementAddress,
+  settlementPreference
 }: {
   profile?: EnsProfile;
   fallbackName?: string;
   settlementAddress?: string;
+  settlementPreference?: string;
 }) {
   const name = profile?.name || fallbackName || "Unclaimed merchant";
   const avatar = profile?.avatar;
@@ -47,7 +49,7 @@ export function EnsProfileCard({
         </div>
         <div className="receipt-item">
           <p className="muted">Settlement preference</p>
-          <strong>{profile?.settlement || "USDC on Arc Testnet"}</strong>
+          <strong>{profile?.settlement || settlementPreference || "USDC settlement"}</strong>
         </div>
       </div>
 

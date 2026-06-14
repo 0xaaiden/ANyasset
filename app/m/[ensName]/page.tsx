@@ -17,6 +17,11 @@ export default async function MerchantProfilePage({
   const merchant = await getMerchantByEns(ensName);
   const profile = mergeEnsProfiles(await resolveEnsProfile(ensName), merchant?.ensProfile);
   const invoices = merchant ? await listInvoices(merchant.id) : [];
+  const settlementLabel = merchant
+    ? `${merchant.settlementTokenSymbol} on ${
+        merchant.settlementNetwork || `EVM ${merchant.settlementChainId}`
+      }`
+    : "USDC settlement";
 
   if (!merchant && !profile) {
     notFound();
@@ -42,10 +47,11 @@ export default async function MerchantProfilePage({
               profile={profile}
               fallbackName={ensName}
               settlementAddress={merchant?.settlementAddress}
+              settlementPreference={settlementLabel}
             />
             <div className="form-card">
               <p className="muted">Settlement</p>
-              <h3>USDC on Arc Testnet</h3>
+              <h3>{settlementLabel}</h3>
               <p className="muted">
                 This profile uses ENS as the public identity layer while checkout settlement is
                 configured per merchant.

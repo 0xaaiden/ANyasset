@@ -27,9 +27,13 @@ export type Merchant = {
   ownerAddress: string;
   ensName?: string;
   ensProfile?: EnsProfile;
-  settlementChainId: "5042002";
+  settlementAssetId?: string;
+  settlementNetwork?: string;
+  settlementChainId: string;
   settlementTokenSymbol: "USDC";
-  settlementTokenAddress: "0x3600000000000000000000000000000000000000";
+  settlementTokenAddress: string;
+  settlementTokenDecimals?: number;
+  settlementFlowSupported?: boolean;
   settlementAddress: string;
   dynamicCheckoutId?: string;
   dynamicCheckoutMode: "live" | "demo";

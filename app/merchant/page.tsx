@@ -13,7 +13,7 @@ export default async function MerchantPage() {
         <div className="section-heading">
           <div>
             <p className="muted">Merchant console</p>
-            <h1>Checkout links that settle predictably.</h1>
+            <h1>Checkout links that settle globally.</h1>
           </div>
         </div>
         <MerchantDashboard initialMerchants={merchants} initialInvoices={invoices} />

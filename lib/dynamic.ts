@@ -1,6 +1,6 @@
 import "server-only";
 
-import { ARC_TESTNET_CHAIN_ID, ARC_USDC_ADDRESS, ARC_USDC_DECIMALS } from "@/lib/config";
+import { getSettlementAsset, type SettlementTokenPreset } from "@/lib/assets";
 
 type CheckoutRequest = {
   mode: "payment";
@@ -8,11 +8,11 @@ type CheckoutRequest = {
     strategy: "cheapest";
     settlements: Array<{
       chainName: "EVM";
-      tokenAddress: typeof ARC_USDC_ADDRESS;
-      chainId: typeof ARC_TESTNET_CHAIN_ID;
-      symbol: "USDC";
-      tokenDecimals: typeof ARC_USDC_DECIMALS;
-      isNative: false;
+      tokenAddress: string;
+      chainId: string;
+      symbol: string;
+      tokenDecimals: number;
+      isNative: boolean;
     }>;
   };
   destinationConfig: {
@@ -25,19 +25,22 @@ type CheckoutRequest = {
   enableOrchestration: true;
 };
 
-export function buildFlowCheckoutRequest(settlementAddress: string): CheckoutRequest {
+export function buildFlowCheckoutRequest(
+  settlementAddress: string,
+  settlementAsset: SettlementTokenPreset = getSettlementAsset(undefined)
+): CheckoutRequest {
   return {
     mode: "payment",
     settlementConfig: {
       strategy: "cheapest",
       settlements: [
         {
-          chainName: "EVM",
-          tokenAddress: ARC_USDC_ADDRESS,
-          chainId: ARC_TESTNET_CHAIN_ID,
-          symbol: "USDC",
-          tokenDecimals: ARC_USDC_DECIMALS,
-          isNative: false
+          chainName: settlementAsset.chainName,
+          tokenAddress: settlementAsset.tokenAddress,
+          chainId: settlementAsset.chainId,
+          symbol: settlementAsset.symbol,
+          tokenDecimals: settlementAsset.tokenDecimals,
+          isNative: settlementAsset.isNative
         }
       ]
     },
@@ -54,14 +57,17 @@ export function buildFlowCheckoutRequest(settlementAddress: string): CheckoutReq
   };
 }
 
-export async function createDynamicCheckout(settlementAddress: string) {
+export async function createDynamicCheckout(
+  settlementAddress: string,
+  settlementAsset: SettlementTokenPreset = getSettlementAsset(undefined)
+) {
   const environmentId = process.env.NEXT_PUBLIC_DYNAMIC_ENVIRONMENT_ID;
   const apiToken = process.env.DYNAMIC_API_TOKEN;
-  const request = buildFlowCheckoutRequest(settlementAddress);
+  const request = buildFlowCheckoutRequest(settlementAddress, settlementAsset);
 
   if (!environmentId || !apiToken) {
     return {
-      checkoutId: `demo_checkout_${settlementAddress.slice(2, 10).toLowerCase()}`,
+      checkoutId: `demo_checkout_${settlementAsset.id}_${settlementAddress.slice(2, 10).toLowerCase()}`,
       mode: "demo" as const,
       raw: request
     };

@@ -5,7 +5,7 @@ const steps: Array<{ status: InvoiceStatus; label: string; detail: string }> = [
   { status: "open", label: "Open", detail: "Invoice ready" },
   { status: "quoted", label: "Quoted", detail: "Flow route priced" },
   { status: "submitted", label: "Submitted", detail: "Wallet signed" },
-  { status: "settled", label: "Settled", detail: "USDC on Arc" },
+  { status: "settled", label: "Settled", detail: "Merchant received" },
   { status: "failed", label: "Closed", detail: "Terminal state" }
 ];
 

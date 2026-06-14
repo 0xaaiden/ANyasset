@@ -15,7 +15,14 @@ import {
 import { DynamicWidget, useDynamicContext } from "@dynamic-labs/sdk-react-core";
 import { EnsProfileCard } from "@/components/EnsProfileCard";
 import { PaymentStatusTimeline } from "@/components/PaymentStatusTimeline";
+import {
+  ARC_SETTLEMENT_ASSET_ID,
+  DEFAULT_SOURCE_ASSET_ID,
+  SOURCE_ASSETS,
+  getSourceAsset
+} from "@/lib/assets";
 import { arcscanTxUrl } from "@/lib/config";
+import { ensureDynamicFlowClient } from "@/lib/dynamicClient";
 import { formatUsd, shortAddress, statusLabel } from "@/lib/format";
 import type { EnsProfile, Invoice, Merchant } from "@/lib/types";
 
@@ -69,19 +76,22 @@ function DynamicPaymentActions({
   merchant,
   onInvoice,
   onError,
-  onBusy
+  onBusy,
+  busy
 }: {
   invoice: Invoice;
   merchant: Merchant;
   onInvoice: (invoice: Invoice) => void;
   onError: (message: string) => void;
   onBusy: (busy: boolean) => void;
+  busy: boolean;
 }) {
   const { primaryWallet } = useDynamicContext();
-  const [sourceChainId, setSourceChainId] = useState("84532");
-  const [sourceTokenAddress, setSourceTokenAddress] = useState(
-    "0x0000000000000000000000000000000000000000"
-  );
+  const [sourceAssetId, setSourceAssetId] = useState<string>(DEFAULT_SOURCE_ASSET_ID);
+  const sourceAsset = getSourceAsset(sourceAssetId);
+  const settlementLabel = `${merchant.settlementTokenSymbol} on ${
+    merchant.settlementNetwork || `EVM ${merchant.settlementChainId}`
+  }`;
 
   async function payWithDynamicFlow() {
     onBusy(true);
@@ -95,33 +105,65 @@ function DynamicPaymentActions({
       }
 
       const flowClient = await import("@dynamic-labs-sdk/client");
+      const dynamicClient = ensureDynamicFlowClient(process.env.NEXT_PUBLIC_DYNAMIC_ENVIRONMENT_ID);
+      if (!dynamicClient) {
+        throw new Error("Dynamic Flow client is not configured.");
+      }
+
+      const walletAccount = flowClient
+        .getWalletAccounts(dynamicClient)
+        .find(
+          (account) => account.address.toLowerCase() === primaryWallet.address.toLowerCase()
+        );
+
+      if (!walletAccount) {
+        throw new Error("Dynamic Flow could not find the connected wallet account. Reconnect your wallet and try again.");
+      }
+      if (!walletAccount.walletProviderKey) {
+        throw new Error(
+          "Dynamic Flow could not find a signing provider for this wallet. Reconnect your wallet in the Dynamic widget and try again."
+        );
+      }
+
+      const { networkData } = await flowClient.getActiveNetworkData({ walletAccount }, dynamicClient);
+      if (networkData?.networkId && networkData.networkId !== sourceAsset.chainId) {
+        try {
+          await flowClient.switchActiveNetwork({
+            networkId: sourceAsset.chainId,
+            walletAccount
+          }, dynamicClient);
+        } catch {
+          throw new Error(`Switch your wallet to ${sourceAsset.network} before paying.`);
+        }
+      }
+
       const { transaction } = await flowClient.createCheckoutTransaction({
         amount: invoice.amountUsd,
         currency: "USD",
         checkoutId: merchant.dynamicCheckoutId
-      });
+      }, dynamicClient);
 
       onInvoice(
         await markInvoice(invoice.id, "started", {
           transactionId: transaction.id,
           payerAddress: primaryWallet.address,
-          sourceChain: `EVM ${sourceChainId}`,
-          sourceToken: sourceTokenAddress,
+          sourceChain: sourceAsset.network,
+          sourceToken: sourceAsset.label,
           raw: transaction
         })
       );
 
       await flowClient.attachCheckoutTransactionSource({
         transactionId: transaction.id,
-        fromAddress: primaryWallet.address,
-        fromChainId: sourceChainId,
-        fromChainName: "EVM"
-      });
+        fromAddress: walletAccount.address,
+        fromChainId: sourceAsset.chainId,
+        fromChainName: walletAccount.chain
+      }, dynamicClient);
 
       const quote = await flowClient.getCheckoutTransactionQuote({
         transactionId: transaction.id,
-        fromTokenAddress: sourceTokenAddress
-      });
+        fromTokenAddress: sourceAsset.tokenAddress
+      }, dynamicClient);
 
       onInvoice(
         await markInvoice(invoice.id, "quoted", {
@@ -132,8 +174,8 @@ function DynamicPaymentActions({
 
       const result = await flowClient.submitCheckoutTransaction({
         transactionId: transaction.id,
-        walletAccount: primaryWallet as never
-      });
+        walletAccount
+      }, dynamicClient);
 
       onInvoice(
         await markInvoice(invoice.id, "submitted", {
@@ -147,7 +189,7 @@ function DynamicPaymentActions({
         await delay(3000);
         finalState = await flowClient.getCheckoutTransaction({
           transactionId: transaction.id
-        });
+        }, dynamicClient);
         const state = finalState as Record<string, unknown>;
         if (
           ["completed", "failed"].includes(String(state.settlementState).toLowerCase()) ||
@@ -183,38 +225,78 @@ function DynamicPaymentActions({
       <div className="form-card">
         <div className="invoice-title">
           <div>
-            <p className="muted">Customer wallet</p>
+            <p className="muted">Step 1 · Customer wallet</p>
             <h3>{primaryWallet?.address ? shortAddress(primaryWallet.address) : "Connect to pay"}</h3>
+            <p className="muted">
+              Dynamic keeps the wallet session separate from the merchant settlement profile.
+            </p>
           </div>
           <Wallet size={22} aria-hidden="true" />
         </div>
         <DynamicWidget />
       </div>
 
-      <div className="form-card">
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="sourceChainId">Source chain ID</label>
-            <input
-              id="sourceChainId"
-              className="input"
-              value={sourceChainId}
-              onChange={(event) => setSourceChainId(event.target.value)}
-            />
+      <div className="form-card payment-action-card">
+        <div className="invoice-title">
+          <div>
+            <p className="muted">Step 2 · Pick route</p>
+            <h3>Choose the source asset</h3>
+            <p className="muted">We show the exact chain and token before Dynamic asks for a signature.</p>
           </div>
-          <div className="field">
-            <label htmlFor="sourceToken">Source token address</label>
-            <input
-              id="sourceToken"
-              className="input mono"
-              value={sourceTokenAddress}
-              onChange={(event) => setSourceTokenAddress(event.target.value)}
-            />
+          <Send size={22} aria-hidden="true" />
+        </div>
+        <div className="field">
+          <label htmlFor="sourceAsset">Customer pays with</label>
+          <select
+            id="sourceAsset"
+            className="select"
+            value={sourceAssetId}
+            onChange={(event) => setSourceAssetId(event.target.value)}
+          >
+            {SOURCE_ASSETS.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.label} · {asset.network}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="asset-summary">
+          <div>
+            <p className="muted">Source route</p>
+            <h3>{sourceAsset.label}</h3>
+            <p className="muted">{sourceAsset.helperText}</p>
+          </div>
+          <span className="status-chip">{sourceAsset.badge || "Source"}</span>
+        </div>
+        <div className="asset-details">
+          <div>
+            <span className="muted">Chain ID</span>
+            <strong className="mono">{sourceAsset.chainId}</strong>
+          </div>
+          <div>
+            <span className="muted">Token</span>
+            <strong className="mono">{sourceAsset.tokenAddress}</strong>
+          </div>
+          <div>
+            <span className="muted">Merchant receives</span>
+            <strong>{settlementLabel}</strong>
           </div>
         </div>
-        <button className="button" type="button" onClick={payWithDynamicFlow}>
-          <Send size={16} aria-hidden="true" />
-          Pay with Dynamic Flow
+        {!merchant.settlementFlowSupported ? (
+          <div className="callout amber">
+            Experimental target: {settlementLabel} is saved as the merchant destination, but
+            Dynamic Flow may not quote it live yet. Use a Base USDC merchant for the reliable live
+            checkout path.
+          </div>
+        ) : null}
+        <button
+          className="button"
+          type="button"
+          onClick={payWithDynamicFlow}
+          disabled={busy || invoice.status === "settled" || !primaryWallet?.address}
+        >
+          {busy ? <Loader2 size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+          {busy ? "Routing payment..." : "Pay with Dynamic Flow"}
         </button>
       </div>
     </div>
@@ -234,15 +316,19 @@ export function CheckoutFlow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [demoSource, setDemoSource] = useState("Base Sepolia USDC");
+  const settlementLabel = `${merchant.settlementTokenSymbol} on ${
+    merchant.settlementNetwork || `EVM ${merchant.settlementChainId}`
+  }`;
+  const isArcSettlement = merchant.settlementAssetId === ARC_SETTLEMENT_ASSET_ID;
 
   const receiptItems = useMemo(
     () => [
       ["Invoice memo", invoice.memo],
-      ["Merchant receives", "USDC on Arc Testnet"],
+      ["Merchant receives", settlementLabel],
       ["Settlement address", merchant.settlementAddress],
       ["Source asset", invoice.sourceToken || demoSource]
     ],
-    [demoSource, invoice.memo, invoice.sourceToken, merchant.settlementAddress]
+    [demoSource, invoice.memo, invoice.sourceToken, merchant.settlementAddress, settlementLabel]
   );
 
   const refreshInvoice = useCallback(async () => {
@@ -293,13 +379,22 @@ export function CheckoutFlow({
   return (
     <div className="checkout-layout">
       <aside className="stack-lg">
+        <div className="flow-banner">
+          <span className="step-number">PAY</span>
+          <div>
+            <strong>Review, connect, sign</strong>
+            <p>One fixed-price invoice. Dynamic quotes the path before the wallet signs.</p>
+          </div>
+        </div>
+
         <EnsProfileCard
           profile={ensProfile || merchant.ensProfile}
           fallbackName={merchant.ensName}
           settlementAddress={merchant.settlementAddress}
+          settlementPreference={settlementLabel}
         />
 
-        <div className="form-card">
+        <div className="form-card featured">
           <div className="invoice-title">
             <div>
               <p className="muted">Hosted checkout</p>
@@ -316,7 +411,7 @@ export function CheckoutFlow({
           <div className="invoice-title">
             <div>
               <p className="muted">Payment receipt</p>
-              <h3>Source asset to USDC on Arc</h3>
+              <h3>Source asset to {settlementLabel}</h3>
             </div>
             <ReceiptText size={22} aria-hidden="true" />
           </div>
@@ -328,7 +423,7 @@ export function CheckoutFlow({
               </div>
             ))}
           </div>
-          {invoice.settlementTxHash ? (
+          {invoice.settlementTxHash && isArcSettlement ? (
             <a
               className="button secondary"
               href={arcscanTxUrl(invoice.settlementTxHash)}
@@ -336,19 +431,25 @@ export function CheckoutFlow({
               rel="noreferrer"
             >
               <ExternalLink size={16} aria-hidden="true" />
-              View Arc settlement
+              View settlement
             </a>
+          ) : invoice.settlementTxHash ? (
+            <div className="receipt-item">
+              <p className="muted">Settlement transaction</p>
+              <strong className="address mono">{invoice.settlementTxHash}</strong>
+            </div>
           ) : null}
         </div>
       </aside>
 
       <main className="stack-lg">
-        <div className="rail-visual panel-muted">
+        <div className="rail-visual panel-muted route-board">
           <div className="rail-row">
             <div className="rail-icon">
               <Wallet size={22} aria-hidden="true" />
             </div>
             <div>
+              <p className="muted">Step A</p>
               <strong>Customer pays from any supported source</strong>
               <div className="rail-track" aria-hidden="true" />
             </div>
@@ -358,6 +459,7 @@ export function CheckoutFlow({
               <ArrowRight size={22} aria-hidden="true" />
             </div>
             <div>
+              <p className="muted">Step B</p>
               <strong>Dynamic Flow quotes, signs, and routes</strong>
               <div className="rail-track" aria-hidden="true" />
             </div>
@@ -367,7 +469,8 @@ export function CheckoutFlow({
               <CheckCircle2 size={22} aria-hidden="true" />
             </div>
             <div>
-              <strong>Merchant receives USDC on Arc</strong>
+              <p className="muted">Step C</p>
+              <strong>Merchant receives {settlementLabel}</strong>
               <div className="rail-track" aria-hidden="true" />
             </div>
           </div>
@@ -382,6 +485,7 @@ export function CheckoutFlow({
             onInvoice={setInvoice}
             onError={setError}
             onBusy={setBusy}
+            busy={busy}
           />
         ) : (
           <div className="form-card">
@@ -412,7 +516,7 @@ export function CheckoutFlow({
             </div>
             <p className="muted">
               Set Dynamic API keys to run the live Flow SDK. Demo mode preserves the checkout,
-              invoice memo, status polling, and Arc receipt UX for judging walkthroughs.
+              invoice memo, status polling, and settlement receipt UX for walkthroughs.
             </p>
             <button
               className="button"

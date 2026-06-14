@@ -3,6 +3,7 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: ['b4a5-2601-8c-4301-faf0-b588-4924-baff-d2ef.ngrok-free.app'],
   turbopack: {
     root: path.resolve()
   },

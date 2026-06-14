@@ -4,7 +4,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AnyAsset Checkout",
-  description: "Crypto checkout links that accept any source asset and settle merchants in USDC on Arc."
+  description:
+    "Crypto checkout links that accept any source asset and settle merchants in USDC globally."
 };
 
 export default function RootLayout({

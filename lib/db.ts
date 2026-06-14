@@ -7,6 +7,12 @@ import {
   ARC_TESTNET_CHAIN_ID,
   ARC_USDC_ADDRESS
 } from "@/lib/config";
+import {
+  ARC_SETTLEMENT_ASSET_ID,
+  findSettlementAssetByChainAndToken,
+  getSettlementAsset,
+  type SettlementTokenPreset
+} from "@/lib/assets";
 import type {
   Database,
   EnsProfile,
@@ -27,6 +33,7 @@ const now = () => new Date().toISOString();
 
 function seedDatabase(): Database {
   const createdAt = now();
+  const settlementAsset = getSettlementAsset(ARC_SETTLEMENT_ASSET_ID);
   const merchant: Merchant = {
     id: "merch_demo_coffee",
     dynamicUserId: "demo-user",
@@ -35,20 +42,24 @@ function seedDatabase(): Database {
     ensProfile: {
       name: "coffee.aiden.eth",
       resolvedAddress: "0x1111111111111111111111111111111111111111",
-      description: "Hackathon coffee checkout settling in USDC on Arc.",
+      description: "Hackathon coffee checkout with global USDC settlement.",
       url: "https://anyasset.example",
       checkout: "/m/coffee.aiden.eth",
-      settlement: "USDC on Arc Testnet",
+      settlement: "Global USDC settlement",
       records: {
-        description: "Hackathon coffee checkout settling in USDC on Arc.",
+        description: "Hackathon coffee checkout with global USDC settlement.",
         url: "https://anyasset.example",
         "anyasset:checkout": "/m/coffee.aiden.eth",
-        "anyasset:settlement": "USDC on Arc Testnet"
+        "anyasset:settlement": "Global USDC settlement"
       }
     },
-    settlementChainId: ARC_TESTNET_CHAIN_ID,
-    settlementTokenSymbol: "USDC",
-    settlementTokenAddress: ARC_USDC_ADDRESS,
+    settlementAssetId: settlementAsset.id,
+    settlementNetwork: settlementAsset.network,
+    settlementChainId: settlementAsset.chainId,
+    settlementTokenSymbol: settlementAsset.symbol,
+    settlementTokenAddress: settlementAsset.tokenAddress,
+    settlementTokenDecimals: settlementAsset.tokenDecimals,
+    settlementFlowSupported: settlementAsset.flowSupported,
     settlementAddress: "0x1111111111111111111111111111111111111111",
     dynamicCheckoutId: "demo_checkout_coffee_arc",
     dynamicCheckoutMode: "demo",
@@ -76,6 +87,26 @@ function seedDatabase(): Database {
   };
 }
 
+function normalizeMerchant(merchant: Merchant): Merchant {
+  const chainId = merchant.settlementChainId || ARC_TESTNET_CHAIN_ID;
+  const tokenAddress = merchant.settlementTokenAddress || ARC_USDC_ADDRESS;
+  const asset =
+    (merchant.settlementAssetId ? getSettlementAsset(merchant.settlementAssetId) : undefined) ??
+    findSettlementAssetByChainAndToken(chainId, tokenAddress) ??
+    getSettlementAsset(ARC_SETTLEMENT_ASSET_ID);
+
+  return {
+    ...merchant,
+    settlementAssetId: asset.id,
+    settlementNetwork: merchant.settlementNetwork || asset.network,
+    settlementChainId: chainId,
+    settlementTokenSymbol: merchant.settlementTokenSymbol || asset.symbol,
+    settlementTokenAddress: tokenAddress,
+    settlementTokenDecimals: merchant.settlementTokenDecimals ?? asset.tokenDecimals,
+    settlementFlowSupported: merchant.settlementFlowSupported ?? asset.flowSupported
+  };
+}
+
 async function ensureDbFile() {
   await mkdir(path.dirname(dbPath), { recursive: true });
   try {
@@ -88,7 +119,9 @@ async function ensureDbFile() {
 async function readDb(): Promise<Database> {
   await ensureDbFile();
   const raw = await readFile(dbPath, "utf8");
-  return JSON.parse(raw) as Database;
+  const db = JSON.parse(raw) as Database;
+  db.merchants = db.merchants.map(normalizeMerchant);
+  return db;
 }
 
 let writeQueue = Promise.resolve();
@@ -134,6 +167,7 @@ export async function createMerchant(input: {
   ownerAddress: string;
   ensName?: string;
   ensProfile?: EnsProfile;
+  settlementAsset: SettlementTokenPreset;
   settlementAddress: string;
   dynamicCheckoutId?: string;
   dynamicCheckoutMode: "live" | "demo";
@@ -146,9 +180,13 @@ export async function createMerchant(input: {
       ownerAddress: input.ownerAddress,
       ensName: input.ensName,
       ensProfile: input.ensProfile,
-      settlementChainId: ARC_TESTNET_CHAIN_ID,
-      settlementTokenSymbol: "USDC",
-      settlementTokenAddress: ARC_USDC_ADDRESS,
+      settlementAssetId: input.settlementAsset.id,
+      settlementNetwork: input.settlementAsset.network,
+      settlementChainId: input.settlementAsset.chainId,
+      settlementTokenSymbol: input.settlementAsset.symbol,
+      settlementTokenAddress: input.settlementAsset.tokenAddress,
+      settlementTokenDecimals: input.settlementAsset.tokenDecimals,
+      settlementFlowSupported: input.settlementAsset.flowSupported,
       settlementAddress: input.settlementAddress,
       dynamicCheckoutId: input.dynamicCheckoutId,
       dynamicCheckoutMode: input.dynamicCheckoutMode,

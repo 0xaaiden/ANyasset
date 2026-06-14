@@ -16,6 +16,12 @@ import { DynamicWidget, useDynamicContext, useIsLoggedIn } from "@dynamic-labs/s
 import { ArcBalanceCard } from "@/components/ArcBalanceCard";
 import { EnsProfileCard } from "@/components/EnsProfileCard";
 import { PaymentStatusTimeline } from "@/components/PaymentStatusTimeline";
+import {
+  ARC_SETTLEMENT_ASSET_ID,
+  DEFAULT_SETTLEMENT_ASSET_ID,
+  SETTLEMENT_ASSETS,
+  getSettlementAsset
+} from "@/lib/assets";
 import { APP_URL } from "@/lib/config";
 import { formatUsd, shortAddress, statusLabel } from "@/lib/format";
 import type { Invoice, Merchant } from "@/lib/types";
@@ -105,6 +111,7 @@ export function MerchantDashboard({
   const [wallet, setWallet] = useState({ address: demoAddress, userId: "demo-user" });
   const [merchantForm, setMerchantForm] = useState({
     ensName: initialMerchants[0]?.ensName ?? "coffee.aiden.eth",
+    settlementAssetId: initialMerchants[0]?.settlementAssetId ?? DEFAULT_SETTLEMENT_ASSET_ID,
     settlementAddress: initialMerchants[0]?.settlementAddress ?? demoAddress
   });
   const [invoiceForm, setInvoiceForm] = useState({
@@ -124,6 +131,12 @@ export function MerchantDashboard({
     () => invoices.filter((invoice) => invoice.merchantId === selectedMerchant?.id),
     [invoices, selectedMerchant?.id]
   );
+  const selectedSettlementAsset = getSettlementAsset(merchantForm.settlementAssetId);
+  const selectedMerchantSettlement = selectedMerchant
+    ? `${selectedMerchant.settlementTokenSymbol} on ${
+        selectedMerchant.settlementNetwork || `EVM ${selectedMerchant.settlementChainId}`
+      }`
+    : "USDC settlement";
 
   async function refreshData(merchantId = selectedMerchant?.id) {
     const [merchantResponse, invoiceResponse] = await Promise.all([
@@ -151,6 +164,7 @@ export function MerchantDashboard({
           dynamicUserId: wallet.userId,
           ownerAddress: wallet.address,
           ensName: merchantForm.ensName,
+          settlementAssetId: merchantForm.settlementAssetId,
           settlementAddress: merchantForm.settlementAddress
         })
       });
@@ -208,17 +222,29 @@ export function MerchantDashboard({
   return (
     <div className="dashboard-layout">
       <aside className="stack-lg">
+        <div className="flow-banner">
+          <span className="step-number">1</span>
+          <div>
+            <strong>Build the merchant rail</strong>
+            <p>Connect a wallet, choose a global settlement destination, then mint checkout links.</p>
+          </div>
+        </div>
+
         {hasDynamicEnv ? (
           <DynamicWalletPanel onWallet={setWallet} />
         ) : (
           <DemoWalletPanel onWallet={setWallet} />
         )}
 
-        <form className="form-card" onSubmit={createMerchantProfile}>
+        <form className="form-card featured" onSubmit={createMerchantProfile}>
           <div className="invoice-title">
             <div>
               <p className="muted">Merchant setup</p>
               <h3>Settlement profile</h3>
+              <p className="muted">
+                This creates the Dynamic checkout config and stores the ENS-facing settlement
+                preference.
+              </p>
             </div>
             <Plus size={22} aria-hidden="true" />
           </div>
@@ -235,7 +261,44 @@ export function MerchantDashboard({
             />
           </div>
           <div className="field">
-            <label htmlFor="settlementAddress">Arc settlement address</label>
+            <label htmlFor="settlementAsset">Settlement asset</label>
+            <select
+              id="settlementAsset"
+              className="select"
+              value={merchantForm.settlementAssetId}
+              onChange={(event) =>
+                setMerchantForm((current) => ({
+                  ...current,
+                  settlementAssetId: event.target.value
+                }))
+              }
+            >
+              {SETTLEMENT_ASSETS.map((asset) => (
+                <option key={asset.id} value={asset.id}>
+                  {asset.label} · {asset.network}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="asset-summary">
+            <div>
+              <p className="muted">Selected settlement</p>
+              <h3>{selectedSettlementAsset.label}</h3>
+              <p className="muted">{selectedSettlementAsset.helperText}</p>
+            </div>
+            <span className="status-chip">{selectedSettlementAsset.badge || "Settlement"}</span>
+          </div>
+          {!selectedSettlementAsset.flowSupported ? (
+            <div className="callout amber">
+              Experimental target: this route stores Arc as the merchant settlement preference and
+              enables Arc balance previews, but Dynamic Flow may not quote it live yet. Pick Base
+              USDC when you need the most reliable live checkout.
+            </div>
+          ) : null}
+          <div className="field">
+            <label htmlFor="settlementAddress">
+              {selectedSettlementAsset.network} settlement address
+            </label>
             <input
               id="settlementAddress"
               className="input mono"
@@ -261,11 +324,35 @@ export function MerchantDashboard({
         </form>
 
         {selectedMerchant ? (
-          <ArcBalanceCard address={selectedMerchant.settlementAddress} />
+          selectedMerchant.settlementAssetId === ARC_SETTLEMENT_ASSET_ID ? (
+            <ArcBalanceCard address={selectedMerchant.settlementAddress} />
+          ) : (
+            <div className="form-card">
+              <div className="invoice-title">
+                <div>
+                  <p className="muted">Settlement balance</p>
+                  <h3>{selectedMerchantSettlement}</h3>
+                </div>
+                <Wallet size={22} aria-hidden="true" />
+              </div>
+              <p className="muted">
+                Live balance lookup is shown only for supported demo rails. This merchant settles to{" "}
+                {selectedMerchantSettlement}.
+              </p>
+            </div>
+          )
         ) : null}
       </aside>
 
       <main className="stack-lg">
+        <div className="flow-banner">
+          <span className="step-number">2</span>
+          <div>
+            <strong>Create a payment link</strong>
+            <p>Choose the merchant, enter the amount, and open a hosted checkout ready for wallets.</p>
+          </div>
+        </div>
+
         {error ? <div className="callout amber error">{error}</div> : null}
         {message ? <div className="callout success">{message}</div> : null}
 
@@ -274,14 +361,17 @@ export function MerchantDashboard({
             profile={selectedMerchant.ensProfile}
             fallbackName={selectedMerchant.ensName}
             settlementAddress={selectedMerchant.settlementAddress}
+            settlementPreference={selectedMerchantSettlement}
           />
         ) : null}
 
         <div className="cards-grid">
           <div className="stat-card">
             <p className="muted">Settlement rail</p>
-            <h3>USDC on Arc Testnet</h3>
-            <p className="muted">Token 0x3600...0000, 6-decimal ERC-20 interface.</p>
+            <h3>{selectedMerchantSettlement}</h3>
+            <p className="muted address mono">
+              {selectedMerchant?.settlementTokenAddress || "Create a merchant to choose a token."}
+            </p>
           </div>
           <div className="stat-card">
             <p className="muted">Flow checkout</p>
@@ -296,11 +386,14 @@ export function MerchantDashboard({
           </div>
         </div>
 
-        <form className="form-card" onSubmit={createInvoiceLink}>
+        <form className="form-card accent" onSubmit={createInvoiceLink}>
           <div className="invoice-title">
             <div>
               <p className="muted">Checkout link</p>
               <h3>Create invoice</h3>
+              <p className="muted">
+                Keep it short: amount, title, and one line of context are enough for customers.
+              </p>
             </div>
             <ReceiptText size={22} aria-hidden="true" />
           </div>
@@ -334,6 +427,7 @@ export function MerchantDashboard({
                   setInvoiceForm((current) => ({ ...current, amountUsd: event.target.value }))
                 }
               />
+              <p className="muted">Use dollars and cents. Example: 5.00</p>
             </div>
             <div className="field full">
               <label htmlFor="title">Title</label>
@@ -345,6 +439,7 @@ export function MerchantDashboard({
                   setInvoiceForm((current) => ({ ...current, title: event.target.value }))
                 }
               />
+              <p className="muted">This is the headline customers see on the checkout.</p>
             </div>
             <div className="field full">
               <label htmlFor="description">Description</label>
@@ -357,6 +452,16 @@ export function MerchantDashboard({
                 }
               />
             </div>
+          </div>
+          <div className="asset-summary">
+            <div>
+              <p className="muted">Customer preview</p>
+              <h3>{invoiceForm.title || "Untitled invoice"}</h3>
+              <p className="muted">
+                {invoiceForm.description || "Add a short note so the payer knows what this covers."}
+              </p>
+            </div>
+            <span className="status-chip">{formatUsd(invoiceForm.amountUsd || "0")}</span>
           </div>
           <button
             className="button"
