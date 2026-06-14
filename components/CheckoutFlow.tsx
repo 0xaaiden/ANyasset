@@ -26,6 +26,7 @@ import {
   type Address,
   type Hex
 } from "viem";
+import { baseSepolia, sepolia } from "viem/chains";
 import { getWalletProviderRegistry } from "@dynamic-labs-sdk/client/core";
 import { EnsProfileCard } from "@/components/EnsProfileCard";
 import { PaymentStatusTimeline } from "@/components/PaymentStatusTimeline";
@@ -52,10 +53,76 @@ const hasDynamicEnv = Boolean(process.env.NEXT_PUBLIC_DYNAMIC_ENVIRONMENT_ID);
 const CCTP_STANDARD_FINALITY_THRESHOLD = 2000;
 const ZERO_BYTES_32 =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+const CCTP_SOURCE_CHAINS = {
+  "84532": baseSepolia,
+  "11155111": sepolia
+} as const;
 
 type BrowserEthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
+
+function chainIdToHex(chainId: string) {
+  return `0x${BigInt(chainId).toString(16)}`;
+}
+
+function chainIdFromHex(chainId: string) {
+  return BigInt(chainId).toString();
+}
+
+function getCctpSourceChain(chainId: string) {
+  return CCTP_SOURCE_CHAINS[chainId as keyof typeof CCTP_SOURCE_CHAINS];
+}
+
+async function ensureWalletChain(provider: BrowserEthereumProvider, sourceAsset: EvmTokenPreset) {
+  const desiredChainId = chainIdToHex(sourceAsset.chainId);
+  const currentChainId = (await provider.request({ method: "eth_chainId" })) as string;
+
+  if (chainIdFromHex(currentChainId) === sourceAsset.chainId) {
+    return;
+  }
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: desiredChainId }]
+    });
+  } catch (switchError) {
+    const sourceChain = getCctpSourceChain(sourceAsset.chainId);
+    const code = (switchError as { code?: number }).code;
+
+    if (code !== 4902 || !sourceChain) {
+      throw switchError;
+    }
+
+    const addChainParams: {
+      chainId: string;
+      chainName: string;
+      nativeCurrency: typeof sourceChain.nativeCurrency;
+      rpcUrls: readonly string[];
+      blockExplorerUrls?: string[];
+    } = {
+      chainId: desiredChainId,
+      chainName: sourceChain.name,
+      nativeCurrency: sourceChain.nativeCurrency,
+      rpcUrls: sourceChain.rpcUrls.default.http
+    };
+
+    if (sourceChain.blockExplorers?.default?.url) {
+      addChainParams.blockExplorerUrls = [sourceChain.blockExplorers.default.url];
+    }
+
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [addChainParams]
+    });
+  }
+
+  const nextChainId = (await provider.request({ method: "eth_chainId" })) as string;
+  if (chainIdFromHex(nextChainId) !== sourceAsset.chainId) {
+    throw new Error(`Switch your wallet to ${sourceAsset.network} before burning USDC.`);
+  }
+}
 
 const cctpDepositForBurnAbi = [
   {
@@ -440,17 +507,23 @@ function ExperimentalArcCctpActions({
         );
       }
 
+      await ensureWalletChain(provider, sourceAsset);
+      const sourceChain = getCctpSourceChain(sourceAsset.chainId);
+      if (!sourceChain) {
+        throw new Error(`${sourceAsset.network} is not configured for Arc CCTP burns.`);
+      }
+
       const transport = custom(provider);
       const walletClient = createWalletClient({
         account: walletAccount.address as Address,
+        chain: sourceChain,
         transport
       });
-      const sourcePublicClient = createPublicClient({ transport });
+      const sourcePublicClient = createPublicClient({ chain: sourceChain, transport });
       const amount = parseUnits(invoice.amountUsd, sourceAsset.tokenDecimals);
       const mintRecipient = pad(merchant.settlementAddress as Address, { size: 32 });
 
       const approvalHash = await walletClient.writeContract({
-        chain: null,
         address: sourceAsset.tokenAddress as Address,
         abi: erc20Abi,
         functionName: "approve",
@@ -459,7 +532,6 @@ function ExperimentalArcCctpActions({
       await sourcePublicClient.waitForTransactionReceipt({ hash: approvalHash });
 
       const burnTxHash = await walletClient.writeContract({
-        chain: null,
         address: CCTP_TESTNET_TOKEN_MESSENGER_V2,
         abi: cctpDepositForBurnAbi,
         functionName: "depositForBurn",
