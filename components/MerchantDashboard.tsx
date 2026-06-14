@@ -288,13 +288,6 @@ export function MerchantDashboard({
             </div>
             <span className="status-chip">{selectedSettlementAsset.badge || "Settlement"}</span>
           </div>
-          {!selectedSettlementAsset.flowSupported ? (
-            <div className="callout amber">
-              Experimental target: this route stores Arc as the merchant settlement preference and
-              enables Arc balance previews, but Dynamic Flow may not quote it live yet. Pick Base
-              USDC when you need the most reliable live checkout.
-            </div>
-          ) : null}
           <div className="field">
             <label htmlFor="settlementAddress">
               {selectedSettlementAsset.network} settlement address
