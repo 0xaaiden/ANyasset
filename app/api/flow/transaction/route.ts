@@ -18,6 +18,12 @@ const schema = z.object({
   payerAddress: z.string().optional(),
   sourceChain: z.string().optional(),
   sourceToken: z.string().optional(),
+  cctpBurnTxHash: z.string().optional(),
+  cctpMessageHash: z.string().optional(),
+  cctpMessageBytes: z.string().optional(),
+  cctpAttestation: z.string().optional(),
+  cctpAttestationStatus: z.enum(["pending", "complete"]).optional(),
+  cctpReceiveTxHash: z.string().optional(),
   settlementTxHash: z.string().optional(),
   raw: z.unknown().optional()
 });
@@ -39,6 +45,13 @@ export async function POST(request: Request) {
       payerAddress: input.payerAddress || record.invoice.payerAddress,
       sourceChain: input.sourceChain || record.invoice.sourceChain,
       sourceToken: input.sourceToken || record.invoice.sourceToken,
+      cctpBurnTxHash: input.cctpBurnTxHash || record.invoice.cctpBurnTxHash,
+      cctpMessageHash: input.cctpMessageHash || record.invoice.cctpMessageHash,
+      cctpMessageBytes: input.cctpMessageBytes || record.invoice.cctpMessageBytes,
+      cctpAttestation: input.cctpAttestation || record.invoice.cctpAttestation,
+      cctpAttestationStatus:
+        input.cctpAttestationStatus || record.invoice.cctpAttestationStatus,
+      cctpReceiveTxHash: input.cctpReceiveTxHash || record.invoice.cctpReceiveTxHash,
       settlementTxHash: input.settlementTxHash || record.invoice.settlementTxHash
     });
 

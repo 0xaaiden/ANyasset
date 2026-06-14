@@ -261,6 +261,12 @@ export async function updateInvoice(
       | "payerAddress"
       | "sourceChain"
       | "sourceToken"
+      | "cctpBurnTxHash"
+      | "cctpMessageHash"
+      | "cctpMessageBytes"
+      | "cctpAttestation"
+      | "cctpAttestationStatus"
+      | "cctpReceiveTxHash"
       | "settlementTxHash"
     >
   >

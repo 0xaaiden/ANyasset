@@ -13,6 +13,20 @@ import {
   Wallet
 } from "lucide-react";
 import { DynamicWidget, useDynamicContext } from "@dynamic-labs/sdk-react-core";
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  decodeEventLog,
+  erc20Abi,
+  http,
+  keccak256,
+  pad,
+  parseUnits,
+  type Address,
+  type Hex
+} from "viem";
+import { getWalletProviderRegistry } from "@dynamic-labs-sdk/client/core";
 import { EnsProfileCard } from "@/components/EnsProfileCard";
 import { PaymentStatusTimeline } from "@/components/PaymentStatusTimeline";
 import {
@@ -21,12 +35,58 @@ import {
   SOURCE_ASSETS,
   getSourceAsset
 } from "@/lib/assets";
-import { arcscanTxUrl } from "@/lib/config";
+import type { EvmTokenPreset } from "@/lib/assets";
+import {
+  ARC_CCTP_DOMAIN,
+  ARC_RPC_URL,
+  CCTP_TESTNET_MESSAGE_TRANSMITTER_V2,
+  CCTP_TESTNET_TOKEN_MESSENGER_V2,
+  arcTestnet,
+  arcscanTxUrl
+} from "@/lib/config";
 import { ensureDynamicFlowClient } from "@/lib/dynamicClient";
 import { formatUsd, shortAddress, statusLabel } from "@/lib/format";
 import type { EnsProfile, Invoice, Merchant } from "@/lib/types";
 
 const hasDynamicEnv = Boolean(process.env.NEXT_PUBLIC_DYNAMIC_ENVIRONMENT_ID);
+const CCTP_STANDARD_FINALITY_THRESHOLD = 2000;
+const ZERO_BYTES_32 =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+
+type BrowserEthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
+const cctpDepositForBurnAbi = [
+  {
+    name: "depositForBurn",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "destinationDomain", type: "uint32" },
+      { name: "mintRecipient", type: "bytes32" },
+      { name: "burnToken", type: "address" },
+      { name: "destinationCaller", type: "bytes32" },
+      { name: "maxFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" }
+    ],
+    outputs: []
+  }
+] as const;
+
+const cctpReceiveMessageAbi = [
+  {
+    name: "receiveMessage",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "message", type: "bytes" },
+      { name: "attestation", type: "bytes" }
+    ],
+    outputs: [{ type: "bool" }]
+  }
+] as const;
 
 type FlowAction = "started" | "quoted" | "submitted" | "settled" | "failed" | "cancelled";
 
@@ -303,6 +363,378 @@ function DynamicPaymentActions({
   );
 }
 
+function ExperimentalArcCctpActions({
+  invoice,
+  merchant,
+  onInvoice,
+  onError,
+  onBusy,
+  busy
+}: {
+  invoice: Invoice;
+  merchant: Merchant;
+  onInvoice: (invoice: Invoice) => void;
+  onError: (message: string) => void;
+  onBusy: (busy: boolean) => void;
+  busy: boolean;
+}) {
+  const { primaryWallet } = useDynamicContext();
+  const cctpSources = (SOURCE_ASSETS as readonly EvmTokenPreset[]).filter(
+    (asset) => asset.symbol === "USDC" && typeof asset.cctpDomain === "number"
+  );
+  const [sourceAssetId, setSourceAssetId] = useState<string>(
+    cctpSources[0]?.id ?? DEFAULT_SOURCE_ASSET_ID
+  );
+  const sourceAsset = getSourceAsset(sourceAssetId);
+
+  async function getWalletAccountAndProvider() {
+    if (!primaryWallet?.address) {
+      throw new Error("Connect a wallet before paying.");
+    }
+
+    const flowClient = await import("@dynamic-labs-sdk/client");
+    const dynamicClient = ensureDynamicFlowClient(process.env.NEXT_PUBLIC_DYNAMIC_ENVIRONMENT_ID);
+    if (!dynamicClient) {
+      throw new Error("Dynamic Flow client is not configured.");
+    }
+
+    const walletAccount = flowClient
+      .getWalletAccounts(dynamicClient)
+      .find((account) => account.address.toLowerCase() === primaryWallet.address.toLowerCase());
+
+    if (!walletAccount?.walletProviderKey) {
+      throw new Error("Reconnect your wallet in the Dynamic widget before using Arc CCTP.");
+    }
+
+    const provider = getWalletProviderRegistry(dynamicClient).getByKey(
+      walletAccount.walletProviderKey
+    ) as BrowserEthereumProvider | undefined;
+
+    if (!provider?.request) {
+      throw new Error(
+        `No EVM provider is registered for ${walletAccount.walletProviderKey}. Reconnect the wallet and refresh.`
+      );
+    }
+
+    return { dynamicClient, flowClient, provider, walletAccount };
+  }
+
+  async function burnToArc() {
+    onBusy(true);
+    onError("");
+    try {
+      if (typeof sourceAsset.cctpDomain !== "number") {
+        throw new Error("Choose a testnet USDC source with CCTP support.");
+      }
+      const { dynamicClient, flowClient, provider, walletAccount } =
+        await getWalletAccountAndProvider();
+
+      const { networkData } = await flowClient.getActiveNetworkData(
+        { walletAccount },
+        dynamicClient
+      );
+      if (networkData?.networkId && networkData.networkId !== sourceAsset.chainId) {
+        await flowClient.switchActiveNetwork(
+          { networkId: sourceAsset.chainId, walletAccount },
+          dynamicClient
+        );
+      }
+
+      const transport = custom(provider);
+      const walletClient = createWalletClient({
+        account: walletAccount.address as Address,
+        transport
+      });
+      const sourcePublicClient = createPublicClient({ transport });
+      const amount = parseUnits(invoice.amountUsd, sourceAsset.tokenDecimals);
+      const mintRecipient = pad(merchant.settlementAddress as Address, { size: 32 });
+
+      const approvalHash = await walletClient.writeContract({
+        chain: null,
+        address: sourceAsset.tokenAddress as Address,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [CCTP_TESTNET_TOKEN_MESSENGER_V2, amount]
+      });
+      await sourcePublicClient.waitForTransactionReceipt({ hash: approvalHash });
+
+      const burnTxHash = await walletClient.writeContract({
+        chain: null,
+        address: CCTP_TESTNET_TOKEN_MESSENGER_V2,
+        abi: cctpDepositForBurnAbi,
+        functionName: "depositForBurn",
+        args: [
+          amount,
+          ARC_CCTP_DOMAIN,
+          mintRecipient,
+          sourceAsset.tokenAddress as Address,
+          ZERO_BYTES_32,
+          BigInt(0),
+          CCTP_STANDARD_FINALITY_THRESHOLD
+        ]
+      });
+      const burnReceipt = await sourcePublicClient.waitForTransactionReceipt({
+        hash: burnTxHash
+      });
+
+      const messageBytes = burnReceipt.logs.flatMap((log) => {
+        try {
+          const decoded = decodeEventLog({
+            abi: [
+              {
+                type: "event",
+                name: "MessageSent",
+                inputs: [{ name: "message", type: "bytes", indexed: false }]
+              }
+            ],
+            data: log.data,
+            topics: log.topics
+          });
+          return decoded.eventName === "MessageSent" ? [decoded.args.message as Hex] : [];
+        } catch {
+          return [];
+        }
+      })[0];
+
+      if (!messageBytes) {
+        throw new Error("CCTP burn succeeded, but the MessageSent event was not found.");
+      }
+
+      const messageHash = keccak256(messageBytes);
+      onInvoice(
+        await markInvoice(invoice.id, "submitted", {
+          transactionId: `cctp_${burnTxHash.slice(2, 12)}`,
+          payerAddress: walletAccount.address,
+          sourceChain: sourceAsset.network,
+          sourceToken: sourceAsset.label,
+          cctpBurnTxHash: burnTxHash,
+          cctpMessageHash: messageHash,
+          cctpMessageBytes: messageBytes,
+          cctpAttestationStatus: "pending",
+          raw: { approvalHash, burnTxHash, messageHash, messageBytes }
+        })
+      );
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Arc CCTP burn failed");
+      try {
+        onInvoice(await markInvoice(invoice.id, "failed", { raw: { error: String(error) } }));
+      } catch {
+        // Keep the primary wallet/CCTP error visible.
+      }
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  async function refreshAttestation() {
+    if (!invoice.cctpMessageHash) {
+      return;
+    }
+    onBusy(true);
+    onError("");
+    try {
+      const response = await fetch(
+        `/api/cctp/attestation?messageHash=${invoice.cctpMessageHash}`,
+        { cache: "no-store" }
+      );
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.error || "Could not refresh CCTP attestation");
+      }
+      onInvoice(
+        await markInvoice(invoice.id, "submitted", {
+          cctpAttestationStatus: body.status,
+          cctpAttestation: body.attestation,
+          raw: body
+        })
+      );
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "CCTP attestation refresh failed");
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  async function receiveOnArc() {
+    onBusy(true);
+    onError("");
+    try {
+      if (!invoice.cctpMessageBytes || !invoice.cctpAttestation) {
+        throw new Error("Wait for the CCTP attestation before receiving on Arc.");
+      }
+      const { provider } = await getWalletAccountAndProvider();
+      const transport = custom(provider);
+      const walletClient = createWalletClient({ transport });
+      const arcPublicClient = createPublicClient({
+        chain: arcTestnet,
+        transport: http(ARC_RPC_URL)
+      });
+
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${Number(arcTestnet.id).toString(16)}` }]
+        });
+      } catch (switchError) {
+        const code = (switchError as { code?: number }).code;
+        if (code !== 4902) {
+          throw switchError;
+        }
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: `0x${Number(arcTestnet.id).toString(16)}`,
+              chainName: arcTestnet.name,
+              nativeCurrency: arcTestnet.nativeCurrency,
+              rpcUrls: [ARC_RPC_URL],
+              blockExplorerUrls: [arcTestnet.blockExplorers.default.url]
+            }
+          ]
+        });
+      }
+
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${Number(arcTestnet.id).toString(16)}` }]
+      });
+
+      const [account] = (await provider.request({
+        method: "eth_requestAccounts"
+      })) as Address[];
+
+      const receiveTxHash = await walletClient.writeContract({
+        chain: null,
+        account,
+        address: CCTP_TESTNET_MESSAGE_TRANSMITTER_V2,
+        abi: cctpReceiveMessageAbi,
+        functionName: "receiveMessage",
+        args: [invoice.cctpMessageBytes as Hex, invoice.cctpAttestation as Hex]
+      });
+      await arcPublicClient.waitForTransactionReceipt({ hash: receiveTxHash });
+
+      onInvoice(
+        await markInvoice(invoice.id, "settled", {
+          cctpReceiveTxHash: receiveTxHash,
+          settlementTxHash: receiveTxHash,
+          raw: { receiveTxHash }
+        })
+      );
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Arc receiveMessage failed");
+    } finally {
+      onBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <div className="form-card">
+        <div className="invoice-title">
+          <div>
+            <p className="muted">Step 1 · Customer wallet</p>
+            <h3>{primaryWallet?.address ? shortAddress(primaryWallet.address) : "Connect to pay"}</h3>
+            <p className="muted">Connect an EVM wallet holding testnet USDC on the source chain.</p>
+          </div>
+          <Wallet size={22} aria-hidden="true" />
+        </div>
+        <DynamicWidget />
+      </div>
+
+      <div className="form-card payment-action-card">
+        <div className="invoice-title">
+          <div>
+            <p className="muted">Experimental Arc CCTP</p>
+            <h3>Burn USDC, mint on Arc</h3>
+            <p className="muted">
+              CCTP burns source-chain USDC and mints native Arc USDC to the merchant.
+            </p>
+          </div>
+          <Send size={22} aria-hidden="true" />
+        </div>
+        <div className="field">
+          <label htmlFor="cctpSourceAsset">Source testnet USDC</label>
+          <select
+            id="cctpSourceAsset"
+            className="select"
+            value={sourceAssetId}
+            onChange={(event) => setSourceAssetId(event.target.value)}
+          >
+            {cctpSources.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.label} · CCTP domain {asset.cctpDomain}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="asset-details">
+          <div>
+            <span className="muted">Destination domain</span>
+            <strong className="mono">{ARC_CCTP_DOMAIN}</strong>
+          </div>
+          <div>
+            <span className="muted">Merchant receives</span>
+            <strong>Arc Testnet USDC</strong>
+          </div>
+          <div>
+            <span className="muted">Amount</span>
+            <strong>{formatUsd(invoice.amountUsd)}</strong>
+          </div>
+        </div>
+        <button
+          className="button"
+          type="button"
+          onClick={burnToArc}
+          disabled={busy || invoice.status === "settled" || !primaryWallet?.address}
+        >
+          {busy ? <Loader2 size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+          {busy ? "Submitting CCTP..." : "Burn USDC to Arc"}
+        </button>
+      </div>
+
+      {invoice.cctpBurnTxHash ? (
+        <div className="form-card">
+          <div className="invoice-title">
+            <div>
+              <p className="muted">CCTP status</p>
+              <h3>{invoice.cctpAttestationStatus === "complete" ? "Attestation ready" : "Waiting for Circle"}</h3>
+            </div>
+            <RefreshCw size={22} aria-hidden="true" />
+          </div>
+          <div className="receipt-grid">
+            <div className="receipt-item">
+              <p className="muted">Burn transaction</p>
+              <strong className="address mono">{invoice.cctpBurnTxHash}</strong>
+            </div>
+            <div className="receipt-item">
+              <p className="muted">Message hash</p>
+              <strong className="address mono">{invoice.cctpMessageHash}</strong>
+            </div>
+          </div>
+          <div className="button-row">
+            <button className="button secondary" type="button" onClick={refreshAttestation}>
+              <RefreshCw size={16} aria-hidden="true" />
+              Refresh attestation
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={receiveOnArc}
+              disabled={busy || invoice.cctpAttestationStatus !== "complete" || invoice.status === "settled"}
+            >
+              Receive on Arc
+            </button>
+          </div>
+          <p className="muted">
+            The receive step submits Circle&apos;s attestation to Arc. The caller pays Arc gas in
+            USDC, while the merchant receives the minted USDC.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function CheckoutFlow({
   initialInvoice,
   merchant,
@@ -479,14 +911,25 @@ export function CheckoutFlow({
         {error ? <div className="callout amber error">{error}</div> : null}
 
         {hasDynamicEnv ? (
-          <DynamicPaymentActions
-            invoice={invoice}
-            merchant={merchant}
-            onInvoice={setInvoice}
-            onError={setError}
-            onBusy={setBusy}
-            busy={busy}
-          />
+          isArcSettlement ? (
+            <ExperimentalArcCctpActions
+              invoice={invoice}
+              merchant={merchant}
+              onInvoice={setInvoice}
+              onError={setError}
+              onBusy={setBusy}
+              busy={busy}
+            />
+          ) : (
+            <DynamicPaymentActions
+              invoice={invoice}
+              merchant={merchant}
+              onInvoice={setInvoice}
+              onError={setError}
+              onBusy={setBusy}
+              busy={busy}
+            />
+          )
         ) : (
           <div className="form-card">
             <div className="invoice-title">

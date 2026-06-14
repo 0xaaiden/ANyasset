@@ -3,6 +3,7 @@ export type EvmTokenPreset = {
   label: string;
   chainName: "EVM";
   chainId: string;
+  cctpDomain?: number;
   network: string;
   tokenAddress: string;
   symbol: "USDC" | "ETH";
@@ -51,6 +52,7 @@ export const SOURCE_ASSETS = [
     label: "Base Sepolia USDC",
     chainName: "EVM",
     chainId: "84532",
+    cctpDomain: 6,
     network: "Base Sepolia",
     tokenAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     symbol: "USDC",
@@ -65,6 +67,7 @@ export const SOURCE_ASSETS = [
     label: "Sepolia USDC",
     chainName: "EVM",
     chainId: "11155111",
+    cctpDomain: 0,
     network: "Sepolia",
     tokenAddress: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     symbol: "USDC",

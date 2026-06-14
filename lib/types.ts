@@ -53,6 +53,12 @@ export type Invoice = {
   payerAddress?: string;
   sourceChain?: string;
   sourceToken?: string;
+  cctpBurnTxHash?: string;
+  cctpMessageHash?: string;
+  cctpMessageBytes?: string;
+  cctpAttestation?: string;
+  cctpAttestationStatus?: "pending" | "complete";
+  cctpReceiveTxHash?: string;
   settlementTxHash?: string;
   memo: string;
   createdAt: string;
