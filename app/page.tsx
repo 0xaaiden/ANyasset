@@ -31,11 +31,15 @@ export default function Home() {
               </p>
             </div>
             <div className="button-row">
-              <Link className="button" href="/merchant">
+              <Link className="button" href="/merchant" data-testid="home-create-checkout">
                 <Link2 size={16} aria-hidden="true" />
                 Create checkout
               </Link>
-              <Link className="button secondary" href="/checkout/inv_demo_latte">
+              <Link
+                className="button secondary"
+                href="/checkout/inv_demo_latte"
+                data-testid="home-pay-demo"
+              >
                 <ReceiptText size={16} aria-hidden="true" />
                 Pay demo invoice
               </Link>

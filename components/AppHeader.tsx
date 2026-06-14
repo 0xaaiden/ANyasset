@@ -12,15 +12,15 @@ export function AppHeader() {
           <span>AnyAsset Checkout</span>
         </Link>
         <nav className="nav-actions" aria-label="Primary">
-          <Link className="nav-link" href="/merchant">
+          <Link className="nav-link" href="/merchant" data-testid="nav-merchant">
             <LayoutDashboard size={16} aria-hidden="true" />
             Merchant
           </Link>
-          <Link className="nav-link" href="/checkout/inv_demo_latte">
+          <Link className="nav-link" href="/checkout/inv_demo_latte" data-testid="nav-pay-demo">
             <ReceiptText size={16} aria-hidden="true" />
             Pay demo
           </Link>
-          <Link className="nav-link" href="/m/coffee.aiden.eth">
+          <Link className="nav-link" href="/m/coffee.aiden.eth" data-testid="nav-ens-profile">
             <Store size={16} aria-hidden="true" />
             ENS profile
           </Link>

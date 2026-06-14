@@ -249,7 +249,12 @@ export function MerchantDashboard({
               placeholder="0x..."
             />
           </div>
-          <button className="button" disabled={savingMerchant} type="submit">
+          <button
+            className="button"
+            disabled={savingMerchant}
+            type="submit"
+            data-testid="create-merchant-button"
+          >
             <Plus size={16} aria-hidden="true" />
             {savingMerchant ? "Creating..." : "Create merchant"}
           </button>
@@ -353,7 +358,12 @@ export function MerchantDashboard({
               />
             </div>
           </div>
-          <button className="button" disabled={!selectedMerchant || savingInvoice} type="submit">
+          <button
+            className="button"
+            disabled={!selectedMerchant || savingInvoice}
+            type="submit"
+            data-testid="create-invoice-button"
+          >
             <Link2 size={16} aria-hidden="true" />
             {savingInvoice ? "Creating..." : "Create checkout link"}
           </button>

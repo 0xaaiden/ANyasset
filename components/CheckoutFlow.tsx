@@ -419,6 +419,7 @@ export function CheckoutFlow({
               type="button"
               disabled={busy || invoice.status === "settled"}
               onClick={runDemoPayment}
+              data-testid="pay-demo-invoice-button"
             >
               <Send size={16} aria-hidden="true" />
               {busy ? "Routing..." : "Pay demo invoice"}
