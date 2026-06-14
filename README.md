@@ -1,6 +1,8 @@
 <div align="center">
-  <video src="recordings/anyasset-walkthrough.webm" controls width="100%" title="AnyAsset Checkout walkthrough"></video>
-  <p><a href="recordings/anyasset-walkthrough.webm">Watch the walkthrough video</a></p>
+  <a href="recordings/anyasset-walkthrough.webm">
+    <img src="recordings/anyasset-walkthrough.gif" alt="AnyAsset Checkout walkthrough" width="100%" />
+  </a>
+  <p><a href="recordings/anyasset-walkthrough.webm">Watch the full-quality walkthrough video</a></p>
 </div>
 
 # AnyAsset Checkout
