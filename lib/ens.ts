@@ -83,3 +83,35 @@ export async function resolveEnsProfile(name?: string): Promise<EnsProfile | und
     };
   }
 }
+
+export function mergeEnsProfiles(
+  liveProfile?: EnsProfile,
+  storedProfile?: EnsProfile
+): EnsProfile | undefined {
+  if (!liveProfile) {
+    return storedProfile;
+  }
+  if (!storedProfile) {
+    return liveProfile;
+  }
+
+  return {
+    ...storedProfile,
+    ...liveProfile,
+    resolvedAddress: liveProfile.resolvedAddress || storedProfile.resolvedAddress,
+    avatar: liveProfile.avatar || storedProfile.avatar,
+    description: liveProfile.description || storedProfile.description,
+    url: liveProfile.url || storedProfile.url,
+    twitter: liveProfile.twitter || storedProfile.twitter,
+    github: liveProfile.github || storedProfile.github,
+    checkout: liveProfile.checkout || storedProfile.checkout,
+    settlement: liveProfile.settlement || storedProfile.settlement,
+    records: {
+      ...storedProfile.records,
+      ...Object.fromEntries(
+        Object.entries(liveProfile.records).filter(([, value]) => Boolean(value))
+      )
+    },
+    error: liveProfile.error
+  };
+}

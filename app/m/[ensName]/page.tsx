@@ -5,7 +5,7 @@ import { EnsProfileCard } from "@/components/EnsProfileCard";
 import { PaymentStatusTimeline } from "@/components/PaymentStatusTimeline";
 import { formatUsd, statusLabel } from "@/lib/format";
 import { getMerchantByEns, listInvoices } from "@/lib/db";
-import { resolveEnsProfile } from "@/lib/ens";
+import { mergeEnsProfiles, resolveEnsProfile } from "@/lib/ens";
 
 export default async function MerchantProfilePage({
   params
@@ -15,7 +15,7 @@ export default async function MerchantProfilePage({
   const { ensName: rawEnsName } = await params;
   const ensName = decodeURIComponent(rawEnsName).toLowerCase();
   const merchant = await getMerchantByEns(ensName);
-  const profile = (await resolveEnsProfile(ensName)) || merchant?.ensProfile;
+  const profile = mergeEnsProfiles(await resolveEnsProfile(ensName), merchant?.ensProfile);
   const invoices = merchant ? await listInvoices(merchant.id) : [];
 
   if (!merchant && !profile) {

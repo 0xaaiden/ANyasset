@@ -58,6 +58,16 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Deploy
+
+The app is a standard Next.js application and is ready for Vercel:
+
+```bash
+vercel deploy
+```
+
+Set the same environment keys in Vercel. If you do not have Dynamic Flow credentials yet, leave the Dynamic keys empty and the hosted app will use demo mode for the checkout lifecycle.
+
 ## Notes
 
 - Local persistence uses a JSON file under `data/` by default for hackathon speed. Set `DATABASE_FILE` to override it.

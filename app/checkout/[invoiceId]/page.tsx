@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { CheckoutFlow } from "@/components/CheckoutFlow";
 import { getInvoiceWithMerchant } from "@/lib/db";
-import { resolveEnsProfile } from "@/lib/ens";
+import { mergeEnsProfiles, resolveEnsProfile } from "@/lib/ens";
 
 export default async function CheckoutPage({
   params
@@ -15,9 +15,10 @@ export default async function CheckoutPage({
     notFound();
   }
 
-  const ensProfile = record.merchant.ensName
+  const liveEnsProfile = record.merchant.ensName
     ? await resolveEnsProfile(record.merchant.ensName)
     : record.merchant.ensProfile;
+  const ensProfile = mergeEnsProfiles(liveEnsProfile, record.merchant.ensProfile);
 
   return (
     <div className="site-shell">
