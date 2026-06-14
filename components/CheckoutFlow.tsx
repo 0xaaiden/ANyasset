@@ -599,16 +599,19 @@ function ExperimentalArcCctpActions({
   }
 
   async function refreshAttestation() {
-    if (!invoice.cctpMessageHash) {
+    if (!invoice.cctpBurnTxHash || typeof sourceAsset.cctpDomain !== "number") {
       return;
     }
     onBusy(true);
     onError("");
     try {
-      const response = await fetch(
-        `/api/cctp/attestation?messageHash=${invoice.cctpMessageHash}`,
-        { cache: "no-store" }
-      );
+      const params = new URLSearchParams({
+        sourceDomain: String(sourceAsset.cctpDomain),
+        transactionHash: invoice.cctpBurnTxHash
+      });
+      const response = await fetch(`/api/cctp/attestation?${params.toString()}`, {
+        cache: "no-store"
+      });
       const body = await response.json();
       if (!response.ok) {
         throw new Error(body.error || "Could not refresh CCTP attestation");
@@ -617,6 +620,7 @@ function ExperimentalArcCctpActions({
         await markInvoice(invoice.id, "submitted", {
           cctpAttestationStatus: body.status,
           cctpAttestation: body.attestation,
+          cctpMessageBytes: body.message,
           raw: body
         })
       );
