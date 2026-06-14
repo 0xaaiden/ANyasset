@@ -1,18 +1,28 @@
-export type EvmTokenPreset = {
+type BaseTokenPreset = {
   id: string;
   label: string;
-  chainName: "EVM";
   chainId: string;
   cctpDomain?: number;
   network: string;
   tokenAddress: string;
-  symbol: "USDC" | "ETH";
   tokenDecimals: number;
   isNative: boolean;
   badge?: string;
   helperText: string;
   flowSupported: boolean;
 };
+
+export type EvmTokenPreset = BaseTokenPreset & {
+  chainName: "EVM";
+  symbol: "USDC" | "ETH";
+};
+
+export type SolanaTokenPreset = BaseTokenPreset & {
+  chainName: "SOL";
+  symbol: "SOL";
+};
+
+export type SourceTokenPreset = EvmTokenPreset | SolanaTokenPreset;
 
 export type SettlementTokenPreset = Omit<EvmTokenPreset, "symbol"> & {
   symbol: "USDC";
@@ -90,8 +100,22 @@ export const SOURCE_ASSETS = [
     badge: "Native",
     helperText: "Native ETH source. Useful when the customer does not hold USDC.",
     flowSupported: true
+  },
+  {
+    id: "solana-sol",
+    label: "Solana SOL",
+    chainName: "SOL",
+    chainId: "101",
+    network: "Solana Mainnet",
+    tokenAddress: "So11111111111111111111111111111111111111112",
+    symbol: "SOL",
+    tokenDecimals: 9,
+    isNative: true,
+    badge: "Flow",
+    helperText: "Native SOL source for Dynamic Flow routing into merchant USDC settlement.",
+    flowSupported: true
   }
-] as const satisfies readonly EvmTokenPreset[];
+] as const satisfies readonly SourceTokenPreset[];
 
 export const SETTLEMENT_ASSETS = [
   {
@@ -146,7 +170,7 @@ export const DEFAULT_SOURCE_ASSET_ID: SourceAssetId = "ethereum-usdc";
 export const DEFAULT_SETTLEMENT_ASSET_ID: SettlementAssetId = "base-usdc";
 export const ARC_SETTLEMENT_ASSET_ID: SettlementAssetId = "arc-testnet-usdc";
 
-export function getSourceAsset(id: string | undefined): EvmTokenPreset {
+export function getSourceAsset(id: string | undefined): SourceTokenPreset {
   return SOURCE_ASSETS.find((asset) => asset.id === id) ?? SOURCE_ASSETS[0];
 }
 

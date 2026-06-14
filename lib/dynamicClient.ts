@@ -3,6 +3,7 @@
 import { createDynamicClient, type DynamicClient } from "@dynamic-labs-sdk/client";
 import { addEvmExtension } from "@dynamic-labs-sdk/evm";
 import { addEvmWindowInjectedExtension } from "@dynamic-labs-sdk/evm/window-injected";
+import { addSolanaExtension } from "@dynamic-labs-sdk/solana";
 
 declare global {
   interface Window {
@@ -28,6 +29,7 @@ export function ensureDynamicFlowClient(environmentId?: string): DynamicClient |
 
   addEvmExtension(client);
   addEvmWindowInjectedExtension(client);
+  addSolanaExtension(client);
 
   window.__anyassetDynamicClient = client;
   return client;

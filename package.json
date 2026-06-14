@@ -12,8 +12,10 @@
   "dependencies": {
     "@dynamic-labs-sdk/client": "1.8.2",
     "@dynamic-labs-sdk/evm": "^1.8.2",
+    "@dynamic-labs-sdk/solana": "^1.8.2",
     "@dynamic-labs/ethereum": "4.88.6",
     "@dynamic-labs/sdk-react-core": "4.88.6",
+    "@dynamic-labs/solana": "^4.88.6",
     "clsx": "2.1.1",
     "ethers": "6.16.0",
     "lucide-react": "0.561.0",
@@ -31,5 +33,21 @@
     "eslint": "9.39.2",
     "eslint-config-next": "16.2.9",
     "typescript": "5.9.3"
-  }
+  },
+  "description": "AnyAsset Checkout is a crypto checkout-link app for merchants. A merchant creates an ENS-branded invoice, a customer pays from a supported source wallet/chain/token, and the merchant receives configured USDC settlement on the network they choose.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xaaiden/ANyasset.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/0xaaiden/ANyasset/issues"
+  },
+  "homepage": "https://github.com/0xaaiden/ANyasset#readme"
 }

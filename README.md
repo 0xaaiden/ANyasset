@@ -1,3 +1,8 @@
+<div align="center">
+  <video src="recordings/anyasset-walkthrough.webm" controls width="100%" title="AnyAsset Checkout walkthrough"></video>
+  <p><a href="recordings/anyasset-walkthrough.webm">Watch the walkthrough video</a></p>
+</div>
+
 # AnyAsset Checkout
 
 AnyAsset Checkout is a crypto checkout-link app for merchants. A merchant creates an ENS-branded invoice, a customer pays from a supported source wallet/chain/token, and the merchant receives configured USDC settlement on the network they choose.

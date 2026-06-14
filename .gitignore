@@ -12,3 +12,4 @@ build
 coverage
 data/*.json
 !.env.example
+.vercel

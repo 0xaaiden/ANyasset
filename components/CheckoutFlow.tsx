@@ -28,6 +28,8 @@ import {
 } from "viem";
 import { baseSepolia, sepolia } from "viem/chains";
 import { getWalletProviderRegistry } from "@dynamic-labs-sdk/client/core";
+import { isEvmWalletAccount } from "@dynamic-labs-sdk/evm";
+import { isSolanaWalletAccount } from "@dynamic-labs-sdk/solana";
 import { EnsProfileCard } from "@/components/EnsProfileCard";
 import { PaymentStatusTimeline } from "@/components/PaymentStatusTimeline";
 import {
@@ -198,6 +200,27 @@ async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isUnauthorizedFlowError(error: unknown) {
+  return error instanceof Error && /unauthorized/i.test(error.message);
+}
+
+function flowErrorMessage(error: unknown) {
+  if (isUnauthorizedFlowError(error)) {
+    return "Dynamic Flow authorization failed for this checkout. The wallet is connected, but the Dynamic environment/API token is not authorized for live Flow transactions. Use the demo route for judging, or create a new merchant after fixing the Dynamic credentials.";
+  }
+  return error instanceof Error ? error.message : "Dynamic Flow payment failed";
+}
+
+function shouldFailInvoiceForFlowError(error: unknown) {
+  if (isUnauthorizedFlowError(error)) {
+    return false;
+  }
+  if (!(error instanceof Error)) {
+    return true;
+  }
+  return !/connect|reconnect|could not find the connected|signing provider/i.test(error.message);
+}
+
 function DynamicPaymentActions({
   invoice,
   merchant,
@@ -220,6 +243,10 @@ function DynamicPaymentActions({
     merchant.settlementNetwork || `EVM ${merchant.settlementChainId}`
   }`;
 
+  useEffect(() => {
+    onError("");
+  }, [onError, primaryWallet?.address, sourceAssetId]);
+
   async function payWithDynamicFlow() {
     onBusy(true);
     onError("");
@@ -237,14 +264,27 @@ function DynamicPaymentActions({
         throw new Error("Dynamic Flow client is not configured.");
       }
 
-      const walletAccount = flowClient
-        .getWalletAccounts(dynamicClient)
-        .find(
-          (account) => account.address.toLowerCase() === primaryWallet.address.toLowerCase()
-        );
+      const walletAccounts = flowClient.getWalletAccounts(dynamicClient);
+      const walletAccount =
+        walletAccounts.find(
+          (account) =>
+            account.chain === sourceAsset.chainName &&
+            account.address.toLowerCase() === primaryWallet.address.toLowerCase()
+        ) ??
+        (sourceAsset.chainName === "SOL"
+          ? walletAccounts.find(isSolanaWalletAccount)
+          : walletAccounts.find(
+              (account) =>
+                isEvmWalletAccount(account) &&
+                account.address.toLowerCase() === primaryWallet.address.toLowerCase()
+            ));
 
       if (!walletAccount) {
-        throw new Error("Dynamic Flow could not find the connected wallet account. Reconnect your wallet and try again.");
+        throw new Error(
+          sourceAsset.chainName === "SOL"
+            ? "Connect a Solana wallet in Dynamic before paying with SOL."
+            : "Dynamic Flow could not find the connected EVM wallet account. Reconnect your wallet and try again."
+        );
       }
       if (!walletAccount.walletProviderKey) {
         throw new Error(
@@ -252,15 +292,23 @@ function DynamicPaymentActions({
         );
       }
 
-      const { networkData } = await flowClient.getActiveNetworkData({ walletAccount }, dynamicClient);
-      if (networkData?.networkId && networkData.networkId !== sourceAsset.chainId) {
-        try {
-          await flowClient.switchActiveNetwork({
-            networkId: sourceAsset.chainId,
-            walletAccount
-          }, dynamicClient);
-        } catch {
-          throw new Error(`Switch your wallet to ${sourceAsset.network} before paying.`);
+      if (isEvmWalletAccount(walletAccount)) {
+        const { networkData } = await flowClient.getActiveNetworkData(
+          { walletAccount },
+          dynamicClient
+        );
+        if (networkData?.networkId && networkData.networkId !== sourceAsset.chainId) {
+          try {
+            await flowClient.switchActiveNetwork(
+              {
+                networkId: sourceAsset.chainId,
+                walletAccount
+              },
+              dynamicClient
+            );
+          } catch {
+            throw new Error(`Switch your wallet to ${sourceAsset.network} before paying.`);
+          }
         }
       }
 
@@ -336,11 +384,13 @@ function DynamicPaymentActions({
         })
       );
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Dynamic Flow payment failed");
-      try {
-        onInvoice(await markInvoice(invoice.id, "failed", { raw: { error: String(error) } }));
-      } catch {
-        // The visible error above is more useful than a secondary state-sync failure.
+      onError(flowErrorMessage(error));
+      if (shouldFailInvoiceForFlowError(error)) {
+        try {
+          onInvoice(await markInvoice(invoice.id, "failed", { raw: { error: String(error) } }));
+        } catch {
+          // The visible error above is more useful than a secondary state-sync failure.
+        }
       }
     } finally {
       onBusy(false);
@@ -397,7 +447,7 @@ function DynamicPaymentActions({
         </div>
         <div className="asset-details">
           <div>
-            <span className="muted">Chain ID</span>
+            <span className="muted">Network</span>
             <strong className="mono">{sourceAsset.chainId}</strong>
           </div>
           <div>
@@ -409,6 +459,12 @@ function DynamicPaymentActions({
             <strong>{settlementLabel}</strong>
           </div>
         </div>
+        {sourceAsset.chainName === "SOL" ? (
+          <div className="callout amber">
+            SOL is included as a Dynamic Flow source option. Connect a Solana wallet in Dynamic for
+            this route; Arc CCTP still uses testnet USDC sources only.
+          </div>
+        ) : null}
         {!merchant.settlementFlowSupported ? (
           <div className="callout amber">
             Experimental target: {settlementLabel} is saved as the merchant destination, but
@@ -492,6 +548,9 @@ function ExperimentalArcCctpActions({
     try {
       if (typeof sourceAsset.cctpDomain !== "number") {
         throw new Error("Choose a testnet USDC source with CCTP support.");
+      }
+      if (sourceAsset.chainName !== "EVM") {
+        throw new Error("Arc CCTP burns only support EVM testnet USDC sources.");
       }
       const { dynamicClient, flowClient, provider, walletAccount } =
         await getWalletAccountAndProvider();
@@ -811,6 +870,59 @@ function ExperimentalArcCctpActions({
   );
 }
 
+function DemoPaymentCard({
+  busy,
+  demoSource,
+  invoice,
+  onDemoSource,
+  onRunDemo,
+  reason
+}: {
+  busy: boolean;
+  demoSource: string;
+  invoice: Invoice;
+  onDemoSource: (source: string) => void;
+  onRunDemo: () => void;
+  reason: string;
+}) {
+  return (
+    <div className="form-card">
+      <div className="invoice-title">
+        <div>
+          <p className="muted">Demo payment route</p>
+          <h3>Simulate Dynamic Flow lifecycle</h3>
+        </div>
+        {busy ? <Loader2 size={22} aria-hidden="true" /> : <RefreshCw size={22} aria-hidden="true" />}
+      </div>
+      <div className="field">
+        <label htmlFor="demoSource">Source asset</label>
+        <select
+          id="demoSource"
+          className="select"
+          value={demoSource}
+          onChange={(event) => onDemoSource(event.target.value)}
+        >
+          <option>Base Sepolia USDC</option>
+          <option>Ethereum Sepolia ETH</option>
+          <option>Solana Devnet SOL</option>
+          <option>Bitcoin testnet BTC</option>
+        </select>
+      </div>
+      <p className="muted">{reason}</p>
+      <button
+        className="button"
+        type="button"
+        disabled={busy || invoice.status === "settled"}
+        onClick={onRunDemo}
+        data-testid="pay-demo-invoice-button"
+      >
+        <Send size={16} aria-hidden="true" />
+        {busy ? "Routing..." : "Pay demo invoice"}
+      </button>
+    </div>
+  );
+}
+
 export function CheckoutFlow({
   initialInvoice,
   merchant,
@@ -828,6 +940,8 @@ export function CheckoutFlow({
     merchant.settlementNetwork || `EVM ${merchant.settlementChainId}`
   }`;
   const isArcSettlement = merchant.settlementAssetId === ARC_SETTLEMENT_ASSET_ID;
+  const showFlowAuthFallback =
+    hasDynamicEnv && !isArcSettlement && /Dynamic Flow authorization failed/i.test(error);
 
   const receiptItems = useMemo(
     () => [
@@ -1007,48 +1121,26 @@ export function CheckoutFlow({
             />
           )
         ) : (
-          <div className="form-card">
-            <div className="invoice-title">
-              <div>
-                <p className="muted">Demo payment route</p>
-                <h3>Simulate Dynamic Flow lifecycle</h3>
-              </div>
-              {busy ? (
-                <Loader2 size={22} aria-hidden="true" />
-              ) : (
-                <RefreshCw size={22} aria-hidden="true" />
-              )}
-            </div>
-            <div className="field">
-              <label htmlFor="demoSource">Source asset</label>
-              <select
-                id="demoSource"
-                className="select"
-                value={demoSource}
-                onChange={(event) => setDemoSource(event.target.value)}
-              >
-                <option>Base Sepolia USDC</option>
-                <option>Ethereum Sepolia ETH</option>
-                <option>Solana Devnet SOL</option>
-                <option>Bitcoin testnet BTC</option>
-              </select>
-            </div>
-            <p className="muted">
-              Set Dynamic API keys to run the live Flow SDK. Demo mode preserves the checkout,
-              invoice memo, status polling, and settlement receipt UX for walkthroughs.
-            </p>
-            <button
-              className="button"
-              type="button"
-              disabled={busy || invoice.status === "settled"}
-              onClick={runDemoPayment}
-              data-testid="pay-demo-invoice-button"
-            >
-              <Send size={16} aria-hidden="true" />
-              {busy ? "Routing..." : "Pay demo invoice"}
-            </button>
-          </div>
+          <DemoPaymentCard
+            busy={busy}
+            demoSource={demoSource}
+            invoice={invoice}
+            onDemoSource={setDemoSource}
+            onRunDemo={runDemoPayment}
+            reason="Set Dynamic API keys to run the live Flow SDK. Demo mode preserves the checkout, invoice memo, status polling, and settlement receipt UX for walkthroughs."
+          />
         )}
+
+        {showFlowAuthFallback ? (
+          <DemoPaymentCard
+            busy={busy}
+            demoSource={demoSource}
+            invoice={invoice}
+            onDemoSource={setDemoSource}
+            onRunDemo={runDemoPayment}
+            reason="Live Dynamic Flow rejected this environment with Unauthorized. Use this fallback to demo the same invoice lifecycle while the Dynamic dashboard/API credentials are fixed."
+          />
+        ) : null}
 
         <div className="button-row">
           <button className="button secondary" type="button" onClick={refreshInvoice}>
