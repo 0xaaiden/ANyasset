@@ -28,20 +28,14 @@ function normalizeImageUrl(value?: string | null) {
   return null;
 }
 
-export async function resolveEnsProfile(name?: string): Promise<EnsProfile | undefined> {
-  if (!name) {
-    return undefined;
-  }
+function hasTextRecords(profile: EnsProfile) {
+  return Object.values(profile.records).some(Boolean);
+}
 
-  const trimmed = name.trim();
-  if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-    return undefined;
-  }
-
-  const normalized = trimmed.toLowerCase();
-  const provider = new JsonRpcProvider(process.env.ETHEREUM_RPC_URL || DEFAULT_ETHEREUM_RPC);
-
-  try {
+async function resolveEnsProfileWithProvider(
+  normalized: string,
+  provider: JsonRpcProvider
+): Promise<EnsProfile> {
     const [resolvedAddress, resolver] = await Promise.all([
       provider.resolveName(normalized),
       provider.getResolver(normalized)
@@ -75,13 +69,46 @@ export async function resolveEnsProfile(name?: string): Promise<EnsProfile | und
       settlement: records["anyasset:settlement"],
       records
     };
+}
+
+export async function resolveEnsProfile(name?: string): Promise<EnsProfile | undefined> {
+  if (!name) {
+    return undefined;
+  }
+
+  const trimmed = name.trim();
+  if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
+    return undefined;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const rpcUrls = Array.from(
+    new Set([process.env.ETHEREUM_RPC_URL, DEFAULT_ETHEREUM_RPC].filter(Boolean))
+  );
+  let fallbackProfile: EnsProfile | undefined;
+
+  for (const rpcUrl of rpcUrls) {
+    try {
+      const profile = await resolveEnsProfileWithProvider(
+        normalized,
+        new JsonRpcProvider(rpcUrl)
+      );
+
+      if (hasTextRecords(profile)) {
+        return profile;
+      }
+
+      fallbackProfile = profile;
   } catch (error) {
-    return {
+      fallbackProfile ??= {
       name: normalized,
       records: {},
       error: error instanceof Error ? error.message : "ENS lookup failed"
     };
   }
+}
+
+  return fallbackProfile;
 }
 
 export function mergeEnsProfiles(

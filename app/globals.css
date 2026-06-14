@@ -268,6 +268,7 @@ h3 {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 14px;
+  min-width: 0;
   padding: 16px;
   border: 3px solid var(--ink);
   border-radius: 0;
@@ -310,8 +311,13 @@ h3 {
 
 .preview-grid {
   display: grid;
-  grid-template-columns: minmax(250px, 0.78fr) minmax(300px, 1.15fr);
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.15fr);
   gap: 14px;
+  min-width: 0;
+}
+
+.preview-grid > * {
+  min-width: 0;
 }
 
 .panel {
@@ -329,6 +335,7 @@ h3 {
 .checkout-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 430px;
   padding: 18px;
 }
@@ -347,11 +354,12 @@ h3 {
 
 .amount {
   width: fit-content;
+  max-width: 100%;
   padding: 8px 12px;
   border: 3px solid var(--ink);
   background: var(--green);
   box-shadow: var(--shadow-sm);
-  font-size: 3.6rem;
+  font-size: clamp(2.45rem, 4.8vw, 3.6rem);
   line-height: 0.95;
   font-weight: 950;
   letter-spacing: -0.06em;
@@ -370,6 +378,7 @@ h3 {
   display: grid;
   align-content: center;
   gap: 18px;
+  min-width: 0;
   min-height: 430px;
   padding: 20px;
   overflow: hidden;
@@ -390,9 +399,14 @@ h3 {
 
 .rail-row {
   display: grid;
-  grid-template-columns: 48px 1fr;
+  grid-template-columns: 48px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
+  min-width: 0;
+}
+
+.rail-row > div:last-child {
+  min-width: 0;
 }
 
 .rail-icon {

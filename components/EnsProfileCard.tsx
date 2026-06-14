@@ -2,6 +2,16 @@ import { ExternalLink, IdCard, Store } from "lucide-react";
 import type { EnsProfile } from "@/lib/types";
 import { shortAddress } from "@/lib/format";
 
+const ENS_RECORD_LABELS: Record<string, string> = {
+  avatar: "Avatar",
+  description: "Description",
+  url: "URL",
+  "com.twitter": "Twitter",
+  "com.github": "GitHub",
+  "anyasset:checkout": "Checkout",
+  "anyasset:settlement": "Settlement"
+};
+
 export function EnsProfileCard({
   profile,
   fallbackName,
@@ -16,6 +26,7 @@ export function EnsProfileCard({
   const name = profile?.name || fallbackName || "Unclaimed merchant";
   const avatar = profile?.avatar;
   const initials = name.slice(0, 2).toUpperCase();
+  const visibleRecords = Object.entries(profile?.records ?? {}).filter(([, value]) => Boolean(value));
 
   return (
     <div className="form-card">
@@ -51,6 +62,18 @@ export function EnsProfileCard({
           <p className="muted">Settlement preference</p>
           <strong>{profile?.settlement || settlementPreference || "USDC settlement"}</strong>
         </div>
+        {profile?.twitter ? (
+          <div className="receipt-item">
+            <p className="muted">Twitter text record</p>
+            <strong>@{profile.twitter}</strong>
+          </div>
+        ) : null}
+        {profile?.github ? (
+          <div className="receipt-item">
+            <p className="muted">GitHub text record</p>
+            <strong>{profile.github}</strong>
+          </div>
+        ) : null}
       </div>
 
       {profile?.url ? (
@@ -58,6 +81,17 @@ export function EnsProfileCard({
           <ExternalLink size={16} aria-hidden="true" />
           Merchant site
         </a>
+      ) : null}
+
+      {visibleRecords.length ? (
+        <div className="asset-details">
+          {visibleRecords.map(([key, value]) => (
+            <div key={key}>
+              <span className="muted">{ENS_RECORD_LABELS[key] || key}</span>
+              <strong className="address mono">{value}</strong>
+            </div>
+          ))}
+        </div>
       ) : null}
 
       {profile?.error ? (
